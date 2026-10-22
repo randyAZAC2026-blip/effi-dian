@@ -1,4 +1,4 @@
-"""python -m archivador --desde-excel token.xlsx [--solo faltantes.csv] --destino CARPETA [--zip lote.zip] [--nit NIT]"""
+"""python -m archivador --desde-excel token.xlsx|cufes.txt [--solo faltantes.csv] --destino CARPETA [--zip lote.zip] [--nit NIT]"""
 from __future__ import annotations
 
 import argparse
@@ -15,11 +15,11 @@ from .token import leer_solo, leer_token, nit_empresa
 
 def main(argv: list[str] | None = None, cliente=None) -> int:
     ap = argparse.ArgumentParser(prog="archivador", description="Baja en lote los XML del token de la DIAN con el certificado de la empresa.")
-    ap.add_argument("--desde-excel", required=True, help="Excel (o CSV) del token exportado del portal de la DIAN")
+    ap.add_argument("--desde-excel", required=True, help="Excel (o CSV) del token de la DIAN, o una lista de CUFE (.txt, .csv o .xlsx; los datos salen del XML)")
     ap.add_argument("--solo", help="CSV de faltantes de la plataforma (Conciliación DIAN → Descargar faltantes)")
     ap.add_argument("--destino", required=True, help="Carpeta donde se guardan los XML (puede ser de Google Drive)")
     ap.add_argument("--zip", help="Además, un ZIP con los XML del lote para el Tablero")
-    ap.add_argument("--nit", help="NIT de la empresa (si no, se toma el que más aparece en el token)")
+    ap.add_argument("--nit", help="NIT de la empresa (si no, el que más aparece en el token o el del certificado)")
     ap.add_argument("--pausa", type=float, default=1.0, help="Segundos entre descargas (por defecto 1)")
     args = ap.parse_args(argv)
     try:
@@ -31,8 +31,11 @@ def main(argv: list[str] | None = None, cliente=None) -> int:
         if not docs:
             print("No hay documentos para descargar.")
             return 0
-        print(f"{len(docs)} documentos del token · empresa {empresa} · destino {args.destino}")
         fuente = cliente or DianClient.desde_entorno()
+        empresa = empresa or getattr(getattr(fuente, "cert", None), "nit", "")
+        if not empresa:
+            raise ValueError("Con una lista de CUFE indica el NIT de la empresa con --nit (para separar ventas de compras).")
+        print(f"{len(docs)} documentos · empresa {empresa} · destino {args.destino}")
         def avisar(i: int, n: int, r) -> None:
             marca = {"descargado": "✓", "ya_estaba": "=", "error": "✗"}[r.estado]
             print(f"  [{i}/{n}] {marca} {r.doc.numero or r.doc.cufe[:16]}{' · ' + r.detalle if r.detalle else ''}")

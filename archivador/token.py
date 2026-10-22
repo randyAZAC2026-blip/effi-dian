@@ -80,6 +80,11 @@ class Documento:
     total: Decimal
 
     @property
+    def completo(self) -> bool:
+        """¿Viene del token (con fecha y número)? Los de una lista de CUFE se completan con su XML."""
+        return bool(self.fecha or self.folio)
+
+    @property
     def numero(self) -> str:
         return f"{self.prefijo}{self.folio}" if self.prefijo and not str(self.folio).startswith(self.prefijo) else str(self.folio)
 
@@ -115,20 +120,55 @@ def leer_filas(filas: list[list[object]]) -> list[Documento]:
     return docs
 
 
+CODIGO = re.compile(r"\b[0-9a-fA-F]{64,}\b")   # CUFE, CUDE y CUNE: SHA-384 en hexadecimal (96); SHA-256 en los viejos
+
+
+def codigos(texto: str) -> list[str]:
+    """Los CUFE de un texto cualquiera (uno por línea, separados por comas, con títulos o numeración), sin repetir."""
+    vistos: dict[str, str] = {}
+    for c in CODIGO.findall(texto):
+        vistos.setdefault(c.lower(), c)
+    return list(vistos.values())
+
+
+def documento_suelto(cufe: str) -> Documento:
+    return Documento(cufe=cufe, tipo="", folio="", prefijo="", fecha=None, nit_emisor="", nombre_emisor="", nit_receptor="", nombre_receptor="", total=Decimal(0))
+
+
+def _filas_csv(ruta: Path) -> list[list[object]]:
+    with ruta.open(encoding="utf-8-sig", newline="") as fh:
+        muestra = fh.read(4096); fh.seek(0)
+        return [list(r) for r in csv.reader(fh, delimiter=";" if muestra.count(";") > muestra.count(",") else ",")]
+
+
 def leer_token(ruta: str | Path) -> list[Documento]:
+    """El Excel o CSV del token. Si no lo es, sirve una lista de CUFE (.txt, .csv o .xlsx): los datos salen del XML."""
     ruta = Path(ruta)
+    if ruta.suffix.lower() == ".txt":
+        docs = [documento_suelto(c) for c in codigos(ruta.read_text(encoding="utf-8-sig", errors="replace"))]
+        if not docs:
+            raise ValueError(f"{ruta.name} no trae ningún CUFE (códigos de 96 caracteres).")
+        return docs
     if ruta.suffix.lower() == ".csv":
-        with ruta.open(encoding="utf-8-sig", newline="") as fh:
-            muestra = fh.read(4096); fh.seek(0)
-            filas = [list(r) for r in csv.reader(fh, delimiter=";" if muestra.count(";") > muestra.count(",") else ",")]
-        return leer_filas(filas)
-    libro = load_workbook(ruta, read_only=True, data_only=True)
-    for hoja in libro.worksheets:
+        filas = _filas_csv(ruta)
         try:
-            return leer_filas([list(r) for r in hoja.iter_rows(values_only=True)])
-        except ValueError:
-            continue
-    raise ValueError("Ninguna hoja tiene la fila de títulos con «CUFE/CUDE» y «Total».")
+            return leer_filas(filas)
+        except ValueError as e:
+            error = e
+    else:
+        libro = load_workbook(ruta, read_only=True, data_only=True)
+        filas = []
+        for hoja in libro.worksheets:
+            hoja_filas = [list(r) for r in hoja.iter_rows(values_only=True)]
+            try:
+                return leer_filas(hoja_filas)
+            except ValueError:
+                filas += hoja_filas
+        error = ValueError("Ninguna hoja tiene la fila de títulos con «CUFE/CUDE» y «Total».")
+    sueltos = codigos("\n".join(str(c) for f in filas for c in f if c is not None))
+    if not sueltos:
+        raise ValueError(f"{error} Tampoco trae una lista de CUFE.")
+    return [documento_suelto(c) for c in sueltos]
 
 
 def nit_empresa(docs: list[Documento]) -> str:

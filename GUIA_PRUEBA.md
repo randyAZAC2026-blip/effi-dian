@@ -38,6 +38,13 @@ suben a la plataforma.
 2. Su XML: `python -m dian_consulta xml <CUFE> -o prueba_emitida.xml`
 3. El XML de una factura **recibida** de un proveedor: `python -m dian_consulta xml <CUFE> -o prueba_recibida.xml`
 
+Para varios a la vez, guarda los CUFE en un `cufes.txt` (uno por línea; sirven también una columna de Excel o CSV):
+```
+python -m dian_consulta estado --lista cufes.txt
+python -m archivador --desde-excel cufes.txt --destino "C:/Facturacion" --zip lote.zip
+```
+El archivador toma el número, la fecha y los NIT de cada XML, y el NIT de la empresa del certificado.
+
 Anota qué responde cada paso. El spec deja abierto si la DIAN entrega los XML a una empresa que factura con un
 proveedor tecnológico, y si entrega los de terceros.
 

@@ -5,7 +5,7 @@ from decimal import Decimal
 from openpyxl import Workbook, load_workbook
 
 from archivador.__main__ import main
-from archivador.descarga import descargar, escribir_indice, escribir_zip, ruta_de, trae_cufe
+from archivador.descarga import datos_xml, descargar, escribir_indice, escribir_zip, ruta_de, trae_cufe
 from archivador.token import clase, leer_solo, leer_token, nit_empresa
 
 EMPRESA = "901682408"
@@ -108,3 +108,74 @@ def test_cli_sin_token_valido(tmp_path, capsys):
     malo.write_text("a,b\n1,2\n", encoding="utf-8")
     assert main(["--desde-excel", str(malo), "--destino", str(tmp_path)], cliente=DianFalsa({})) == 1
     assert "CUFE/CUDE" in capsys.readouterr().err
+
+
+UBL = ('xmlns="urn:oasis:names:specification:ubl:schema:xsd:{raiz}-2" '
+       'xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2" '
+       'xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"')
+
+
+def _parte(rol, nit, nombre):
+    return (f"<cac:{rol}><cac:Party><cac:PartyTaxScheme><cbc:RegistrationName>{nombre}</cbc:RegistrationName>"
+            f'<cbc:CompanyID schemeID="5">{nit}</cbc:CompanyID></cac:PartyTaxScheme></cac:Party></cac:{rol}>')
+
+
+def _factura(uuid, numero, fecha_, emisor, receptor, total, tipo="01"):
+    return (f'<Invoice {UBL.format(raiz="Invoice")}><cbc:ID>{numero}</cbc:ID><cbc:UUID>{uuid}</cbc:UUID><cbc:IssueDate>{fecha_}</cbc:IssueDate>'
+            f"<cbc:InvoiceTypeCode>{tipo}</cbc:InvoiceTypeCode>{_parte('AccountingSupplierParty', emisor, 'EMISOR SAS')}"
+            f"{_parte('AccountingCustomerParty', receptor, 'RECEPTOR SAS')}"
+            f'<cac:LegalMonetaryTotal><cbc:PayableAmount currencyID="COP">{total}</cbc:PayableAmount></cac:LegalMonetaryTotal></Invoice>')
+
+
+def _adjunto(factura):
+    return (f'<AttachedDocument {UBL.format(raiz="AttachedDocument")}><cbc:ParentDocumentID>X</cbc:ParentDocumentID>'
+            f"<cac:Attachment><cac:ExternalReference><cbc:Description><![CDATA[{factura}]]></cbc:Description></cac:ExternalReference></cac:Attachment>"
+            f"</AttachedDocument>").encode()
+
+
+def test_datos_del_xml_factura_adjunto_soporte_y_nomina():
+    d = datos_xml(_factura("u", "FE164", "2026-09-20", "901682408", "800100200", "357000.00").encode())
+    assert (d["tipo"], d["folio"], d["fecha"], d["nit_emisor"], d["nit_receptor"], d["total"]) == (
+        "Factura electrónica", "FE164", date(2026, 9, 20), "901682408", "800100200", Decimal("357000.00"))
+    assert datos_xml(_adjunto(_factura("u", "FV10", "2026-09-15", "900111222", EMPRESA, "1")))["folio"] == "FV10"
+    assert datos_xml(_factura("u", "DSE27", "2026-09-16", EMPRESA, "71000000", "1", tipo="05").encode())["tipo"] == "Documento soporte"
+    nomina = (b'<NominaIndividual xmlns="dian:gov:co:facturaelectronica:NominaIndividual"><NumeroSecuenciaXML Numero="NI70"/>'
+              b'<InformacionGeneral FechaGen="2026-09-30"/><Empleador NIT="901682408" RazonSocial="MI EMPRESA"/>'
+              b'<Trabajador NumeroDocumento="1020304050" PrimerNombre="ANA" PrimerApellido="RUIZ"/><ComprobanteTotal>2500000.00</ComprobanteTotal></NominaIndividual>')
+    n = datos_xml(nomina)
+    assert (n["tipo"], n["folio"], n["nit_emisor"], n["nombre_receptor"], n["total"]) == ("Nómina Individual", "NI70", EMPRESA, "ANA RUIZ", Decimal("2500000.00"))
+
+
+def test_lista_de_cufe_se_organiza_con_los_datos_del_xml(tmp_path, capsys):
+    venta, compra, malo = "a1" * 48, "b2" * 48, "c3" * 48
+    lista = tmp_path / "cufes.txt"
+    lista.write_text(f"Lista de CUFE\n1) {venta}\n{compra.upper()}, {malo}\n{venta}\n", encoding="utf-8")
+    docs = leer_token(lista)
+    assert [d.cufe.lower() for d in docs] == [venta, compra, malo] and not docs[0].completo
+    fuente = DianFalsa({venta: _factura(venta, "FE164", "2026-09-20", EMPRESA, "800100200", "357000").encode(),
+                        compra.upper(): _adjunto(_factura(compra, "FV10", "2026-09-15", "900111222", EMPRESA, "1190000")),
+                        malo: RuntimeError("código 66")})
+    destino = tmp_path / "out"
+    assert main(["--desde-excel", str(lista), "--destino", str(destino), "--nit", EMPRESA, "--pausa", "0"], cliente=fuente) == 2
+    assert (destino / "2026" / "09" / "ventas" / "FE164_800100200.xml").exists()
+    assert (destino / "2026" / "09" / "compras" / "FV10_900111222.xml").exists()
+    hoja = load_workbook(destino / "indice.xlsx")["Indice"]
+    assert hoja.cell(2, 3).value == "FE164" and hoja.cell(2, 9).value == 357000 and hoja.cell(3, 6).value == "EMISOR SAS"
+    capsys.readouterr()
+
+    # Segunda corrida: lo que quedó en el índice no se vuelve a pedir y conserva sus datos.
+    fuente2 = DianFalsa({malo: RuntimeError("código 66")})
+    assert main(["--desde-excel", str(lista), "--destino", str(destino), "--nit", EMPRESA, "--pausa", "0"], cliente=fuente2) == 2
+    assert fuente2.pedidos == [malo] and "ya estaban 2" in capsys.readouterr().out
+    assert load_workbook(destino / "indice.xlsx")["Indice"].cell(2, 3).value == "FE164"
+
+
+def test_lista_en_excel_y_sin_nit(tmp_path, capsys):
+    wb = Workbook()
+    wb.active.append(["CUFE"])
+    wb.active.append(["d4" * 48])
+    ruta = tmp_path / "lista.xlsx"
+    wb.save(ruta)
+    assert [d.cufe for d in leer_token(ruta)] == ["d4" * 48]
+    assert main(["--desde-excel", str(ruta), "--destino", str(tmp_path / "out")], cliente=DianFalsa({})) == 1
+    assert "--nit" in capsys.readouterr().err

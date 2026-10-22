@@ -21,12 +21,12 @@ AHORA = datetime(2026, 10, 22, 12, 0, tzinfo=timezone.utc)
 EP = "https://vpfe.dian.gov.co/WcfDianCustomerServices.svc"
 
 
-def _p12(tmp_path, bits=2048, dias=365, clave=b"secreta"):
+def _p12(tmp_path, bits=2048, dias=365, clave=b"secreta", serial="901682408"):
     k = rsa.generate_private_key(public_exponent=65537, key_size=bits)
-    nombre = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "EMPRESA SAS"), x509.NameAttribute(NameOID.SERIAL_NUMBER, "901682408")])
+    nombre = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "EMPRESA SAS"), x509.NameAttribute(NameOID.SERIAL_NUMBER, serial)])
     cert = (x509.CertificateBuilder().subject_name(nombre).issuer_name(nombre).public_key(k.public_key()).serial_number(1)
             .not_valid_before(AHORA - timedelta(days=1)).not_valid_after(AHORA + timedelta(days=dias)).sign(k, hashes.SHA256()))
-    ruta = tmp_path / f"empresa_{bits}_{dias}.p12"
+    ruta = tmp_path / f"empresa_{bits}_{dias}_{serial}.p12"
     ruta.write_bytes(pkcs12.serialize_key_and_certificates(b"empresa", k, cert, None, serialization.BestAvailableEncryption(clave)))
     return ruta
 
@@ -40,6 +40,13 @@ def cert(tmp_path):
 def test_carga_el_certificado_y_muestra_titular_y_vigencia(cert):
     r = cert.resumen()
     assert "EMPRESA SAS" in r["titular"] and "901682408" in r["titular"] and r["bits"] == 2048
+
+
+def test_nit_del_certificado_con_o_sin_digito_de_verificacion(tmp_path):
+    nit = lambda serial: cargar_certificado(_p12(tmp_path, serial=serial), "secreta", ahora=AHORA).nit  # noqa: E731
+    assert nit("9016409885") == "901640988"      # Camerfirma pega el DV al final
+    assert nit("901640988-5") == "901640988"
+    assert nit("901682408") == "901682408"       # sin DV: el último dígito no cuadra como DV
 
 
 def test_contrasena_mala_clave_corta_y_vencido(tmp_path):
@@ -226,3 +233,27 @@ def test_cli_diagnostico_y_cert_por_opcion(limpio, monkeypatch, capsys, tmp_path
     p12 = _p12(tmp_path, dias=4000)
     assert cli_dian(["--cert", str(p12), "verificar-cert"]) == 0
     assert "EMPRESA SAS" in capsys.readouterr().out
+
+
+def test_cli_estado_de_una_lista_de_cufe(limpio, monkeypatch, capsys):
+    from dian_consulta import __main__ as modulo
+    from dian_consulta.client import Estado
+
+    validos = {"a" * 96, "c" * 96}
+    class ClienteFalso:
+        def __init__(self, cfg):
+            self.pedidos = []
+        def get_status(self, codigo):
+            if codigo == "b" * 96:
+                raise DianError("código 66")
+            ok = codigo in validos
+            return Estado(is_valid=ok, status_code="00" if ok else "99", status_description="Procesado Correctamente." if ok else "Rechazado")
+    monkeypatch.setattr(modulo, "DianClient", ClienteFalso)
+    monkeypatch.setattr(modulo.DianConfig, "desde_entorno", classmethod(lambda cls, **_: DianConfig(cert_path="x", cert_password="")))
+    (limpio / "cufes.txt").write_text(f"CUFE\n1. {'a' * 96}\n{'b' * 96}\n{'A' * 96}\n", encoding="utf-8")
+    assert cli_dian(["estado", "--lista", "cufes.txt", "--pausa", "0", "c" * 96]) == 2
+    salida = capsys.readouterr().out
+    assert "[1/3]" in salida and "ERROR · código 66" in salida and "Válidos 2 de 3" in salida
+    with pytest.raises(SystemExit):
+        cli_dian(["estado", "--sin-esto"])
+    assert cli_dian(["estado"]) == 1 and "Indica uno o varios CUFE" in capsys.readouterr().err

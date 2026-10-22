@@ -5,15 +5,15 @@ from __future__ import annotations
 import re
 import time
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable, Iterable, Protocol
 
 from lxml import etree
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font
 
-from .token import Documento, clase
+from .token import Documento, clase, fecha, nit, valor
 
 
 class FuenteXml(Protocol):
@@ -54,17 +54,98 @@ def trae_cufe(xml: bytes, cufe: str) -> bool:
     return any(c in (x.text or "").lower() for x in raiz.iter() if isinstance(x.tag, str) and etree.QName(x).localname == "Description")
 
 
+def _hijos(el: etree._Element, *ruta: str) -> list[etree._Element]:
+    """Los descendientes que siguen la ruta de nombres locales (sin importar el namespace)."""
+    nivel = [el]
+    for nombre in ruta:
+        nivel = [x for n in nivel for x in n if isinstance(x.tag, str) and etree.QName(x).localname == nombre]
+    return nivel
+
+
+def _t(el: etree._Element, *ruta: str) -> str:
+    x = _hijos(el, *ruta)
+    return (x[0].text or "").strip() if x else ""
+
+
+def _nit_parte(el: etree._Element, parte: str) -> tuple[str, str]:
+    p = _hijos(el, parte, "Party")
+    if not p:
+        return "", ""
+    p = p[0]
+    return (nit(_t(p, "PartyTaxScheme", "CompanyID") or _t(p, "PartyLegalEntity", "CompanyID")),
+            _t(p, "PartyTaxScheme", "RegistrationName") or _t(p, "PartyLegalEntity", "RegistrationName") or _t(p, "PartyName", "Name"))
+
+
+def datos_xml(xml: bytes) -> dict:
+    """Número, fecha, tipo, emisor, receptor y total del XML (factura, notas, documento soporte, nómina o
+    AttachedDocument con la factura adentro). Lo que no encuentre queda vacío."""
+    raiz = etree.fromstring(xml)
+    tipo = etree.QName(raiz).localname
+    if tipo == "AttachedDocument":
+        for d in raiz.iter():
+            texto = (d.text or "").strip() if isinstance(d.tag, str) and etree.QName(d).localname == "Description" else ""
+            if texto.startswith("<"):
+                try:
+                    return datos_xml(texto.encode())
+                except etree.XMLSyntaxError:
+                    continue
+        emisor, nombre_e = nit(_t(raiz, "SenderParty", "PartyTaxScheme", "CompanyID")), _t(raiz, "SenderParty", "PartyTaxScheme", "RegistrationName")
+        receptor, nombre_r = nit(_t(raiz, "ReceiverParty", "PartyTaxScheme", "CompanyID")), _t(raiz, "ReceiverParty", "PartyTaxScheme", "RegistrationName")
+        return {"tipo": "Factura electrónica", "folio": _t(raiz, "ParentDocumentID") or _t(raiz, "ID"), "fecha": fecha(_t(raiz, "IssueDate")),
+                "nit_emisor": emisor, "nombre_emisor": nombre_e, "nit_receptor": receptor, "nombre_receptor": nombre_r}
+    if "Nomina" in tipo:
+        atr = lambda ruta, a: (_hijos(raiz, ruta)[0].get(a) or "").strip() if _hijos(raiz, ruta) else ""  # noqa: E731
+        return {"tipo": "Nómina Individual", "folio": atr("NumeroSecuenciaXML", "Numero"), "fecha": fecha(atr("InformacionGeneral", "FechaGen")),
+                "nit_emisor": nit(atr("Empleador", "NIT")), "nombre_emisor": atr("Empleador", "RazonSocial"),
+                "nit_receptor": nit(atr("Trabajador", "NumeroDocumento")),
+                "nombre_receptor": " ".join(x for x in (atr("Trabajador", "PrimerNombre"), atr("Trabajador", "PrimerApellido")) if x),
+                "total": valor(_t(raiz, "ComprobanteTotal"))}
+    emisor, nombre_e = _nit_parte(raiz, "AccountingSupplierParty")
+    receptor, nombre_r = _nit_parte(raiz, "AccountingCustomerParty")
+    if tipo == "Invoice":
+        tipo = "Documento soporte" if _t(raiz, "InvoiceTypeCode") == "05" else "Factura electrónica"
+    else:
+        tipo = {"CreditNote": "Nota crédito", "DebitNote": "Nota débito"}.get(tipo, tipo)
+    return {"tipo": tipo, "folio": _t(raiz, "ID"), "fecha": fecha(_t(raiz, "IssueDate")), "nit_emisor": emisor, "nombre_emisor": nombre_e,
+            "nit_receptor": receptor, "nombre_receptor": nombre_r, "total": valor(_t(raiz, "LegalMonetaryTotal", "PayableAmount"))}
+
+
+def completar(d: Documento, xml: bytes) -> Documento:
+    """Llena con el XML lo que no trae un documento de una lista de CUFE."""
+    try:
+        datos = datos_xml(xml)
+    except etree.XMLSyntaxError:
+        return d
+    return replace(d, **{k: v for k, v in datos.items() if v and not getattr(d, k)})
+
+
+def _previos(destino: Path) -> dict[str, Path]:
+    """CUFE → archivo de las corridas anteriores (del indice.xlsx), para no volver a pedir los de una lista."""
+    indice = destino / "indice.xlsx"
+    if not indice.is_file():
+        return {}
+    try:
+        filas = list(load_workbook(indice, read_only=True).worksheets[0].iter_rows(values_only=True))
+    except Exception:  # un índice dañado solo hace que se vuelvan a pedir
+        return {}
+    if not filas or "CUFE" not in filas[0] or "Archivo" not in filas[0]:
+        return {}
+    c, a = filas[0].index("CUFE"), filas[0].index("Archivo")
+    return {str(f[c]).lower(): Path(str(f[a])) for f in filas[1:] if f[c] and f[a]}
+
+
 def descargar(docs: Iterable[Documento], fuente: FuenteXml, destino: str | Path, empresa: str, pausa: float = 1.0,
               dormir: Callable[[float], None] = time.sleep, avisar: Callable[[int, int, Resultado], None] | None = None) -> list[Resultado]:
     destino = Path(destino)
     docs = list(docs)
+    previos = _previos(destino) if any(not d.completo for d in docs) else {}
     out: list[Resultado] = []
     pedidos = 0
     for i, d in enumerate(docs, start=1):
-        cls = clase(d, empresa)
-        ruta = ruta_de(destino, d, cls)
-        if ruta.exists():
-            r = Resultado(d, cls, ruta, "ya_estaba")
+        previo = previos.get(d.cufe.lower()) if not d.completo else ruta_de(destino, d, clase(d, empresa))
+        if previo and previo.exists():
+            d = d if d.completo else completar(d, previo.read_bytes())
+            r = Resultado(d, clase(d, empresa), previo, "ya_estaba")
         else:
             if pedidos and pausa:
                 dormir(pausa)
@@ -73,11 +154,14 @@ def descargar(docs: Iterable[Documento], fuente: FuenteXml, destino: str | Path,
                 xml = fuente.get_xml(d.cufe)
                 if not trae_cufe(xml, d.cufe):
                     raise ValueError("el XML que entregó la DIAN no trae ese CUFE")
+                d = d if d.completo else completar(d, xml)
+                cls = clase(d, empresa)
+                ruta = ruta_de(destino, d, cls)
                 ruta.parent.mkdir(parents=True, exist_ok=True)
                 ruta.write_bytes(xml)
                 r = Resultado(d, cls, ruta, "descargado")
             except Exception as e:  # un documento que falla no detiene el lote
-                r = Resultado(d, cls, None, "error", str(e))
+                r = Resultado(d, clase(d, empresa), None, "error", str(e))
         out.append(r)
         if avisar:
             avisar(i, len(docs), r)
