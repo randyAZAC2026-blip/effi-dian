@@ -1,0 +1,42 @@
+{
+  "_nota": "Datos de ejemplo con la forma de la API de Effi (todo como texto, fechas en UTC). Hoy = 2026-10-10.",
+  "facturas_v": [
+    {"sucursal": "1", "id": "160", "prefijo_id_facturacion": "FE-160", "ebill": "1", "cufe": "c160", "fecha_trans": "2026-09-02 15:00:00", "total": "119000.0000", "nombre_tercero": "CLIENTE UNO", "nit": "800100200"},
+    {"sucursal": "1", "id": "161", "prefijo_id_facturacion": "FE-161", "ebill": "1", "cufe": null, "fecha_trans": "2026-09-03 15:00:00", "total": "238000.0000", "nombre_tercero": "CLIENTE DOS", "nit": "800100201"},
+    {"sucursal": "1", "id": "162", "prefijo_id_facturacion": "FE-162", "ebill": "1", "cufe": null, "fecha_trans": "2026-10-09 20:00:00", "total": "50000.0000", "nombre_tercero": "CLIENTE TRES", "nit": "800100202"},
+    {"sucursal": "1", "id": "164", "prefijo_id_facturacion": "FE-164", "ebill": "0", "cufe": null, "fecha_trans": "2026-09-20 15:00:00", "total": "357000.0000", "nombre_tercero": "CLIENTE CUATRO", "nit": "800100203"},
+    {"sucursal": "1", "id": "166", "prefijo_id_facturacion": "FE-166", "ebill": "1", "cufe": "c166", "fecha_trans": "2026-09-25 15:00:00", "total": "10000.0000", "_anulada": true},
+    {"sucursal": "2", "id": "30", "prefijo_id_facturacion": "POS-30", "ebill": "0", "cufe": null, "fecha_trans": "2026-09-05 15:00:00", "total": "5000.0000"},
+    {"sucursal": "2", "id": "31", "prefijo_id_facturacion": "POS-31", "ebill": "0", "cufe": null, "fecha_trans": "2026-09-06 15:00:00", "total": "5000.0000"}
+  ],
+  "notas_credito_v": [
+    {"sucursal": "1", "id": "8", "prefijo_id_facturacion": "NC-8", "ebill": "1", "cufe": null, "fecha_trans": "2026-09-10 15:00:00", "total": "19000.0000"},
+    {"sucursal": "1", "id": "9", "prefijo_id_facturacion": "NC-9", "ebill": "1", "cufe": "cude9", "fecha_trans": "2026-09-11 15:00:00", "total": "19000.0000"}
+  ],
+  "notas_debito_v": [],
+  "buzon": [
+    {"id": "1", "cufe": "PROV-A", "est_documento_ebill": "3", "fecha_trans": "2026-09-04 15:00:00", "total": "1190000.00", "nit": "900111222", "nombre": "FERRETERIA", "numero": "FV-10", "url_pdf": "https://effi.com.co/pdf/1", "url_xml": "https://effi.com.co/xml/1"},
+    {"id": "2", "cufe": "PROV-B", "est_documento_ebill": "3", "fecha_trans": "2026-09-05 15:00:00", "total": "500000.00", "nit": "900333444", "nombre": "PAPELERIA", "numero": "PP-77"},
+    {"id": "3", "cufe": "PROV-C", "est_documento_ebill": "1", "fecha_trans": "2026-09-08 15:00:00", "total": "80000.00", "nit": "900555666", "nombre": "TRANSPORTES", "numero": "T-5"},
+    {"id": "4", "cufe": "PROV-D", "est_documento_ebill": "6", "fecha_trans": "2026-09-09 15:00:00", "total": "70000.00", "nit": "900777888", "nombre": "RECHAZADA SAS", "numero": "R-1"},
+    {"id": "5", "cufe": "PROV-E", "est_documento_ebill": "2", "fecha_trans": "2026-10-05 15:00:00", "total": "60000.00", "nit": "900999000", "nombre": "RECIENTE", "numero": "N-2"}
+  ],
+  "facturas_c": [
+    {"sucursal": "1", "id": "40", "factura_proveedor": "FV-10", "cufe_proveedor": "PROV-A", "fecha_trans": "2026-09-04 18:00:00", "total": "1190000.0000", "nombre_tercero": "FERRETERIA", "nit": "900111222"},
+    {"sucursal": "1", "id": "41", "factura_proveedor": "R-1", "cufe_proveedor": "PROV-D", "fecha_trans": "2026-09-09 18:00:00", "total": "70000.0000", "nombre_tercero": "RECHAZADA SAS", "nit": "900777888"},
+    {"sucursal": "1", "id": "42", "factura_proveedor": "T-5", "cufe_proveedor": "PROV-C", "fecha_trans": "2026-09-08 18:00:00", "total": "85000.0000", "nombre_tercero": "TRANSPORTES", "nit": "900555666"},
+    {"sucursal": "1", "id": "43", "factura_proveedor": "T-5 bis", "cufe_proveedor": "PROV-C", "fecha_trans": "2026-09-09 18:00:00", "total": "80000.0000", "nombre_tercero": "TRANSPORTES", "nit": "900555666"},
+    {"sucursal": "1", "id": "44", "factura_proveedor": "MANUAL-3", "cufe_proveedor": "", "fecha_trans": "2026-09-12 18:00:00", "total": "20000.0000", "nombre_tercero": "PERSONA NATURAL", "nit": "71000000"},
+    {"sucursal": "1", "id": "45", "factura_proveedor": "OTRO-MES", "cufe_proveedor": "PROV-Z", "fecha_trans": "2026-09-13 18:00:00", "total": "30000.0000", "nombre_tercero": "LLEGO EN AGOSTO", "nit": "900121212"}
+  ],
+  "documentos_soporte": [
+    {"sucursal": "1", "id": "27", "prefijo_id_transaccion": "DSE-27", "ebill": "1", "cufe": null, "fecha_trans": "2026-09-15 15:00:00", "total": "300000.0000", "nombre_tercero": "JARDINERO", "nit": "1020304050"},
+    {"sucursal": "1", "id": "28", "prefijo_id_transaccion": "DSE-28", "ebill": "1", "cufe": "cuds28", "fecha_trans": "2026-09-16 15:00:00", "total": "300000.0000"}
+  ],
+  "nominas": [
+    {"sucursal": "1", "id": "70", "ebill": "1", "cufe": null, "fecha_trans": "2026-09-30 15:00:00", "total": "2500000.0000", "empleado": "ANA PEREZ", "nit": "1020304050"},
+    {"sucursal": "1", "id": "71", "ebill": "1", "cufe": "cune71", "fecha_trans": "2026-09-30 15:00:00", "total": "3000000.0000", "empleado": "LUIS GOMEZ"},
+    {"sucursal": "1", "id": "72", "ebill": "1", "cufe": "cune72", "cufe_ajuste": null, "fecha_trans": "2026-09-30 15:00:00", "total": "1800000.0000", "empleado": "SOFIA RIOS", "_anulada": true},
+    {"sucursal": "1", "id": "73", "ebill": "1", "cufe": "cune73", "cufe_ajuste": "ajuste73", "fecha_trans": "2026-09-30 15:00:00", "total": "1800000.0000", "empleado": "PEDRO DIAZ", "_anulada": true}
+  ]
+}

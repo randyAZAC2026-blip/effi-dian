@@ -1,0 +1,7 @@
+.env
+*.p12
+*.pfx
+*.xlsx
+__pycache__/
+.pytest_cache/
+.venv/
