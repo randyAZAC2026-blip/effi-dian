@@ -18,7 +18,7 @@ Todo lo de estas fases solo consulta: no crea, no modifica y no anula nada en Ef
 python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements-dev.txt
 cp .env.example .env                                   # y llena EFFI_API_KEY
-python -m pytest                                       # 65 pruebas, sin red
+python -m pytest                                       # 66 pruebas, sin red
 ```
 
 ## Uso
@@ -40,7 +40,7 @@ Parámetros: `--gracia-cufe` (2 días), `--gracia-radian` (10 días), `--toleran
 ```bash
 python -m dian_consulta verificar-cert                 # revisa el .p12 del .env; no envía nada
 python -m dian_consulta estado <CUFE>                  # GetStatus
-python -m dian_consulta estado --lista cufes.txt       # GetStatus de una lista (.txt, .csv o .xlsx)
+python -m dian_consulta estado --lista cufes.txt       # GetStatus de una lista → estado_dian.xlsx (retoma si se corta)
 python -m dian_consulta xml <CUFE> -o factura.xml      # GetXmlByDocumentKey
 python -m archivador --desde-excel token.xlsx [--solo faltantes.csv] --destino "G:/Mi unidad/Facturacion" [--zip lote.zip]
 python -m archivador --desde-excel cufes.txt --destino "G:/Mi unidad/Facturacion"   # una lista de CUFE sin token

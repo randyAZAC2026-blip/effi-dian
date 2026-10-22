@@ -43,6 +43,8 @@ Para varios a la vez, guarda los CUFE en un `cufes.txt` (uno por línea; sirven 
 python -m dian_consulta estado --lista cufes.txt
 python -m archivador --desde-excel cufes.txt --destino "C:/Facturacion" --zip lote.zip
 ```
+`estado --lista` imprime una línea por documento y al final cuántos son válidos y cuántos traen cada regla
+(FAJ43b, RUT01…). El detalle queda en `estado_dian.xlsx`; si la corrida se corta, el mismo comando sigue donde iba.
 El archivador toma el número, la fecha y los NIT de cada XML, y el NIT de la empresa del certificado.
 
 Anota qué responde cada paso. El spec deja abierto si la DIAN entrega los XML a una empresa que factura con un

@@ -236,24 +236,57 @@ def test_cli_diagnostico_y_cert_por_opcion(limpio, monkeypatch, capsys, tmp_path
 
 
 def test_cli_estado_de_una_lista_de_cufe(limpio, monkeypatch, capsys):
+    from openpyxl import load_workbook
+
     from dian_consulta import __main__ as modulo
     from dian_consulta.client import Estado
 
-    validos = {"a" * 96, "c" * 96}
+    NOTI = ["Regla: FAJ43b, Notificación: Nombre informado No corresponde al registrado en el RUT con respecto al Nit suminstrado.",
+            "Regla: RUT01, Notificación: La validación del estado del RUT próximamente estará disponible."]
+    pedidos = []
     class ClienteFalso:
         def __init__(self, cfg):
-            self.pedidos = []
+            pass
         def get_status(self, codigo):
+            pedidos.append(codigo)
             if codigo == "b" * 96:
                 raise DianError("código 66")
-            ok = codigo in validos
-            return Estado(is_valid=ok, status_code="00" if ok else "99", status_description="Procesado Correctamente." if ok else "Rechazado")
+            if codigo == "d" * 96:
+                return Estado(is_valid=False, status_code="99", status_description="Validación contiene errores", errores=["Regla: FAD06, Rechazo: CUFE"])
+            return Estado(is_valid=True, status_code="00", status_description="Procesado Correctamente.", errores=NOTI if codigo == "a" * 96 else NOTI[1:])
     monkeypatch.setattr(modulo, "DianClient", ClienteFalso)
     monkeypatch.setattr(modulo.DianConfig, "desde_entorno", classmethod(lambda cls, **_: DianConfig(cert_path="x", cert_password="")))
-    (limpio / "cufes.txt").write_text(f"CUFE\n1. {'a' * 96}\n{'b' * 96}\n{'A' * 96}\n", encoding="utf-8")
+    (limpio / "cufes.txt").write_text(f"CUFE\n1. {'a' * 96}\n{'b' * 96}\n{'A' * 96}\n{'d' * 96}\n", encoding="utf-8")
     assert cli_dian(["estado", "--lista", "cufes.txt", "--pausa", "0", "c" * 96]) == 2
     salida = capsys.readouterr().out
-    assert "[1/3]" in salida and "ERROR · código 66" in salida and "Válidos 2 de 3" in salida
+    assert f"[1/4] {'c' * 16}… VÁLIDO · 00\n" in salida and "Notificación" not in salida.split("Válidos")[0]
+    assert "ERROR · código 66" in salida and "NO VÁLIDO · 99" in salida and "  - Regla: FAD06" in salida
+    assert "Válidos 2 de 4 · no válidos 1 · con error 1" in salida
+    assert "  RUT01: 2 documentos" in salida and "  FAJ43b: 1 documentos · Nombre informado No corresponde" in salida
+    hoja = load_workbook(limpio / "estado_dian.xlsx")["Estado DIAN"]
+    assert hoja.max_row == 5 and hoja.cell(3, 5).value == "FAJ43b, RUT01" and hoja.cell(4, 7).value == "código 66"
+
+    # Segunda corrida: solo se vuelve a consultar el que tuvo error.
+    pedidos.clear()
+    assert cli_dian(["estado", "--lista", "cufes.txt", "--pausa", "0", "c" * 96]) == 2
+    assert pedidos == ["b" * 96] and load_workbook(limpio / "estado_dian.xlsx").active.max_row == 5
+    capsys.readouterr()
+    assert cli_dian(["estado", "c" * 96]) == 0 and "  - Regla: RUT01" in capsys.readouterr().out   # uno solo: como antes
     with pytest.raises(SystemExit):
         cli_dian(["estado", "--sin-esto"])
     assert cli_dian(["estado"]) == 1 and "Indica uno o varios CUFE" in capsys.readouterr().err
+
+
+def test_lote_se_guarda_al_interrumpir(tmp_path):
+    from dian_consulta.client import Estado
+    from dian_consulta.lote import consultar, leer_previas
+
+    class Corta:
+        def get_status(self, codigo):
+            if codigo == "z" * 96:
+                raise KeyboardInterrupt
+            return Estado(is_valid=True, status_code="00", status_description="ok")
+    salida = tmp_path / "estado.xlsx"
+    with pytest.raises(KeyboardInterrupt):
+        consultar(Corta(), ["x" * 96, "z" * 96], salida, pausa=0, imprimir=lambda _: None)
+    assert list(leer_previas(salida)) == ["x" * 96]

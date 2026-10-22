@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-import time
 from pathlib import Path
 
 from effi_api.config import cargar_env
@@ -12,6 +11,7 @@ from effi_api.config import cargar_env
 from .cert import CertificadoError, cargar_certificado
 from .client import DianClient, DianError
 from .config import DianConfig, explicar_env, limpiar_ruta
+from .lote import consultar, resumen
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -23,6 +23,7 @@ def main(argv: list[str] | None = None) -> int:
     es = sub.add_parser("estado", help="GetStatus de uno o varios CUFE, CUDE o CUNE")
     es.add_argument("codigos", nargs="*")
     es.add_argument("--pausa", type=float, default=1.0, help="Segundos entre consultas (por defecto 1)")
+    es.add_argument("-o", "--salida", help="Excel con el resultado (con varios CUFE, por defecto estado_dian.xlsx); si ya existe, retoma")
     es.add_argument("--lista", help="Archivo con los CUFE: .txt (uno por línea), .csv o .xlsx (también el Excel del token)")
     xm = sub.add_parser("xml", help="GetXmlByDocumentKey: guarda el XML del documento")
     xm.add_argument("codigo")
@@ -50,23 +51,21 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         cliente = DianClient(cfg)
         if args.comando == "estado":
-            validos = 0
-            for i, codigo in enumerate(codigos, start=1):
-                if i > 1:
-                    time.sleep(args.pausa)
-                prefijo = f"[{i}/{len(codigos)}] {codigo[:16]}… " if len(codigos) > 1 else ""
-                try:
-                    e = cliente.get_status(codigo)
-                except DianError as error:  # uno que falla no detiene la lista
-                    print(f"{prefijo}ERROR · {error}")
-                    continue
-                validos += e.is_valid
-                print(f"{prefijo}{'VÁLIDO' if e.is_valid else 'NO VÁLIDO'} · {e.status_code} · {e.status_description}")
+            if len(codigos) == 1 and not args.salida:
+                e = cliente.get_status(codigos[0])
+                print(f"{'VÁLIDO' if e.is_valid else 'NO VÁLIDO'} · {e.status_code} · {e.status_description}")
                 for m in e.errores:
                     print(f"  - {m}")
-            if len(codigos) > 1:
-                print(f"Válidos {validos} de {len(codigos)}")
-            return 0 if validos == len(codigos) else 2
+                return 0 if e.is_valid else 2
+            salida = Path(args.salida or "estado_dian.xlsx")
+            try:
+                filas = consultar(cliente, codigos, salida, pausa=args.pausa)
+            except KeyboardInterrupt:
+                print(f"Resultado parcial en {salida}")
+                return 130
+            print("\n".join(resumen(filas)))
+            print(f"Detalle en {salida}")
+            return 0 if all(f.valido for f in filas) else 2
         xml = cliente.get_xml(args.codigo)
         destino = Path(args.salida or f"{args.codigo[:16]}.xml")
         destino.write_bytes(xml)
