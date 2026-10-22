@@ -174,7 +174,7 @@ def test_config_no_imprime_la_contrasena(monkeypatch):
 import os  # noqa: E402
 
 from dian_consulta.__main__ import main as cli_dian  # noqa: E402
-from effi_api.config import cargar_env  # noqa: E402
+from dian_consulta.entorno import cargar_env  # noqa: E402
 
 
 @pytest.fixture

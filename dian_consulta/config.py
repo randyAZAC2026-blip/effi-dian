@@ -7,7 +7,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from effi_api.config import LecturaEnv, cargar_env
+from .entorno import LecturaEnv, cargar_env
 
 ENDPOINTS = {
     "produccion": "https://vpfe.dian.gov.co/WcfDianCustomerServices.svc",

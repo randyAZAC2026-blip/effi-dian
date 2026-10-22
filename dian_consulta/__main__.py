@@ -6,7 +6,7 @@ import os
 import sys
 from pathlib import Path
 
-from effi_api.config import cargar_env
+from .entorno import cargar_env
 
 from .cert import CertificadoError, cargar_certificado
 from .client import DianClient, DianError
