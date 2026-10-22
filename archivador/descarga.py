@@ -135,36 +135,44 @@ def _previos(destino: Path) -> dict[str, Path]:
 
 
 def descargar(docs: Iterable[Documento], fuente: FuenteXml, destino: str | Path, empresa: str, pausa: float = 1.0,
-              dormir: Callable[[float], None] = time.sleep, avisar: Callable[[int, int, Resultado], None] | None = None) -> list[Resultado]:
+              dormir: Callable[[float], None] = time.sleep, avisar: Callable[[int, int, Resultado], None] | None = None,
+              guardar: Callable[[list[Resultado]], None] | None = None, guardar_cada: int = 100) -> list[Resultado]:
+    """guardar recibe lo hecho cada guardar_cada descargas y al terminar, también si se corta (Ctrl+C), para retomar."""
     destino = Path(destino)
     docs = list(docs)
     previos = _previos(destino) if any(not d.completo for d in docs) else {}
     out: list[Resultado] = []
     pedidos = 0
-    for i, d in enumerate(docs, start=1):
-        previo = previos.get(d.cufe.lower()) if not d.completo else ruta_de(destino, d, clase(d, empresa))
-        if previo and previo.exists():
-            d = d if d.completo else completar(d, previo.read_bytes())
-            r = Resultado(d, clase(d, empresa), previo, "ya_estaba")
-        else:
-            if pedidos and pausa:
-                dormir(pausa)
-            pedidos += 1
-            try:
-                xml = fuente.get_xml(d.cufe)
-                if not trae_cufe(xml, d.cufe):
-                    raise ValueError("el XML que entregó la DIAN no trae ese CUFE")
-                d = d if d.completo else completar(d, xml)
-                cls = clase(d, empresa)
-                ruta = ruta_de(destino, d, cls)
-                ruta.parent.mkdir(parents=True, exist_ok=True)
-                ruta.write_bytes(xml)
-                r = Resultado(d, cls, ruta, "descargado")
-            except Exception as e:  # un documento que falla no detiene el lote
-                r = Resultado(d, clase(d, empresa), None, "error", str(e))
-        out.append(r)
-        if avisar:
-            avisar(i, len(docs), r)
+    try:
+        for i, d in enumerate(docs, start=1):
+            previo = previos.get(d.cufe.lower()) if not d.completo else ruta_de(destino, d, clase(d, empresa))
+            if previo and previo.exists():
+                d = d if d.completo else completar(d, previo.read_bytes())
+                r = Resultado(d, clase(d, empresa), previo, "ya_estaba")
+            else:
+                if pedidos and pausa:
+                    dormir(pausa)
+                pedidos += 1
+                try:
+                    xml = fuente.get_xml(d.cufe)
+                    if not trae_cufe(xml, d.cufe):
+                        raise ValueError("el XML que entregó la DIAN no trae ese CUFE")
+                    d = d if d.completo else completar(d, xml)
+                    cls = clase(d, empresa)
+                    ruta = ruta_de(destino, d, cls)
+                    ruta.parent.mkdir(parents=True, exist_ok=True)
+                    ruta.write_bytes(xml)
+                    r = Resultado(d, cls, ruta, "descargado")
+                except Exception as e:  # un documento que falla no detiene el lote
+                    r = Resultado(d, clase(d, empresa), None, "error", str(e))
+            out.append(r)
+            if avisar:
+                avisar(i, len(docs), r)
+            if guardar and r.estado != "ya_estaba" and pedidos % guardar_cada == 0:
+                guardar(out)
+    finally:
+        if guardar:
+            guardar(out)
     return out
 
 

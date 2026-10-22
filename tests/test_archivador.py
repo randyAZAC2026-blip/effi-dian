@@ -179,3 +179,21 @@ def test_lista_en_excel_y_sin_nit(tmp_path, capsys):
     assert [d.cufe for d in leer_token(ruta)] == ["d4" * 48]
     assert main(["--desde-excel", str(ruta), "--destino", str(tmp_path / "out")], cliente=DianFalsa({})) == 1
     assert "--nit" in capsys.readouterr().err
+
+
+def test_lista_cortada_con_ctrl_c_retoma_sin_volver_a_pedir(tmp_path, capsys):
+    uno, dos = "e5" * 48, "f6" * 48
+    lista = tmp_path / "cufes.txt"
+    lista.write_text(f"{uno}\n{dos}\n", encoding="utf-8")
+
+    class Corta(DianFalsa):
+        def get_xml(self, cufe):
+            if cufe == dos:
+                raise KeyboardInterrupt
+            return super().get_xml(cufe)
+    destino = tmp_path / "out"
+    args = ["--desde-excel", str(lista), "--destino", str(destino), "--nit", EMPRESA, "--pausa", "0"]
+    assert main(args, cliente=Corta({uno: _factura(uno, "FE1", "2026-09-01", EMPRESA, "800100200", "1").encode()})) == 130
+    assert "Interrumpido" in capsys.readouterr().out and (destino / "indice.xlsx").exists()
+    fuente = DianFalsa({dos: _factura(dos, "FE2", "2026-09-02", EMPRESA, "800100200", "1").encode()})
+    assert main(args, cliente=fuente) == 0 and fuente.pedidos == [dos]

@@ -39,8 +39,17 @@ def main(argv: list[str] | None = None, cliente=None) -> int:
         def avisar(i: int, n: int, r) -> None:
             marca = {"descargado": "✓", "ya_estaba": "=", "error": "✗"}[r.estado]
             print(f"  [{i}/{n}] {marca} {r.doc.numero or r.doc.cufe[:16]}{' · ' + r.detalle if r.detalle else ''}")
-        resultados = descargar(docs, fuente, args.destino, empresa, pausa=args.pausa, avisar=avisar)
-        indice = escribir_indice(resultados, Path(args.destino) / "indice.xlsx")
+        indice = Path(args.destino) / "indice.xlsx"
+        def guardar(hechos: list) -> None:
+            try:
+                escribir_indice(hechos, indice)
+            except PermissionError:  # en Windows, el índice abierto en Excel no se puede reescribir
+                print(f"  No se pudo guardar {indice}: ciérralo en Excel; se intenta de nuevo más adelante.")
+        try:
+            resultados = descargar(docs, fuente, args.destino, empresa, pausa=args.pausa, avisar=avisar, guardar=guardar)
+        except KeyboardInterrupt:
+            print(f"Interrumpido. Lo descargado quedó en {indice}; corre el mismo comando para seguir.")
+            return 130
         c = Counter(r.estado for r in resultados)
         print(f"Descargados {c['descargado']} · ya estaban {c['ya_estaba']} · con error {c['error']} → {indice}")
         if args.zip:

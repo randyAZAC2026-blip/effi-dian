@@ -18,7 +18,7 @@ Todo lo de estas fases solo consulta: no crea, no modifica y no anula nada en Ef
 python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements-dev.txt
 cp .env.example .env                                   # y llena EFFI_API_KEY
-python -m pytest                                       # 66 pruebas, sin red
+python -m pytest                                       # 67 pruebas, sin red
 ```
 
 ## Uso
