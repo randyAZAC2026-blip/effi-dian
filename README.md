@@ -1,10 +1,14 @@
 # effi-dian
 
 Herramientas en Python para controlar la facturación electrónica de una empresa que factura con **Effi ERP**
-(transmisión a la DIAN vía SOENAC). Implementa las fases 1 y 2 del spec «Integración Effi ERP ↔ DIAN»:
+(transmisión a la DIAN vía SOENAC), según el spec «Integración Effi ERP ↔ DIAN»:
 
 1. **`effi_api`**: cliente de la API REST de Effi, de **solo lectura** por defecto.
 2. **`conciliacion`**: un CLI que lee un periodo de Effi y entrega un Excel de hallazgos fiscales.
+3. **`dian_consulta`**: consulta del web service de la DIAN (GetStatus, GetXmlByDocumentKey…), firmada con el
+   certificado `.p12` de la empresa.
+4. **`archivador`**: baja en lote los XML de los documentos del token de la DIAN. El certificado nunca sale del
+   computador.
 
 Todo lo de estas fases solo consulta: no crea, no modifica y no anula nada en Effi ni en la DIAN.
 
@@ -14,7 +18,7 @@ Todo lo de estas fases solo consulta: no crea, no modifica y no anula nada en Ef
 python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements-dev.txt
 cp .env.example .env                                   # y llena EFFI_API_KEY
-python -m pytest                                       # 41 pruebas, sin red
+python -m pytest                                       # 55 pruebas, sin red
 ```
 
 ## Uso
@@ -30,6 +34,24 @@ python -m conciliacion --desde 2026-09-01 --hasta 2026-09-30 --verificar-dian   
 ```
 
 Parámetros: `--gracia-cufe` (2 días), `--gracia-radian` (10 días), `--tolerancia` ($1).
+
+## XML de la DIAN con certificado
+
+```bash
+python -m dian_consulta verificar-cert                 # revisa el .p12 del .env; no envía nada
+python -m dian_consulta estado <CUFE>                  # GetStatus
+python -m dian_consulta xml <CUFE> -o factura.xml      # GetXmlByDocumentKey
+python -m archivador --desde-excel token.xlsx [--solo faltantes.csv] --destino "G:/Mi unidad/Facturacion" [--zip lote.zip]
+```
+
+- La firma es WS-Security, RSA-SHA256 con c14n exclusiva sobre `wsa:To`, Timestamp de 60 s y BinarySecurityToken.
+  Se hace sin `xmlsec`, con `lxml` + `cryptography`.
+- Se firma el sobre tal como lo leerá la DIAN: serializado y vuelto a leer, porque la c14n de lxml sobre árboles en
+  memoria no resuelve siempre igual los InclusiveNamespaces.
+- El archivador guarda `<destino>/<año>/<mes>/{ventas,compras,nomina,documento_soporte}/<número>_<NIT>.xml`. Valida
+  que cada XML traiga su CUFE, no vuelve a pedir lo que ya está y escribe `indice.xlsx` con «No descargados».
+- `faltantes.csv` sale de la plataforma: Conciliación DIAN → «Descargar faltantes (CSV)».
+- El paso a paso de la prueba real con el certificado está en `GUIA_PRUEBA.md`.
 
 ## Controles
 
