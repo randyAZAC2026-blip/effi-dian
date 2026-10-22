@@ -17,11 +17,20 @@ suben a la plataforma.
    DIAN_CERT_PATH=C:/Seguro/empresa.p12
    DIAN_CERT_PASSWORD=la contraseña del certificado
    ```
+   En el `.env` cada clave va **una sola vez**: escribe la ruta en la línea `DIAN_CERT_PATH=` que ya existe, no
+   agregues otra. La ruta puede ir con `\` o con `/`.
 3. Verifica el certificado (no envía nada a la DIAN):
    ```
    python -m dian_consulta verificar-cert
    ```
    Debe mostrar el titular con el NIT de la empresa, el emisor y la vigencia.
+
+   **En Windows, si dice que falta la ruta:**
+   - `python -m dian_consulta diagnostico` muestra qué `.env` leyó, qué claves `DIAN_` trae y si el archivo del
+     certificado existe. Nunca muestra la contraseña.
+   - Sin depender del `.env`: `python -m dian_consulta --cert "C:\Certificados\empresa.p12" verificar-cert`. La
+     contraseña se pregunta y no se ve al escribir.
+   - Sin la ruta en el `.env`, el programa también la pregunta.
 
 ## 2. Probar un documento
 1. Estado de una factura **emitida** por la empresa (su CUFE sale del token o de la factura):

@@ -161,3 +161,68 @@ def test_config_no_imprime_la_contrasena(monkeypatch):
     monkeypatch.setenv("DIAN_AMBIENTE", "pruebas")
     with pytest.raises(ValueError, match="produccion o habilitacion"):
         DianConfig.desde_entorno(None)
+
+
+# ---------------- .env de Windows ----------------
+import os  # noqa: E402
+
+from dian_consulta.__main__ import main as cli_dian  # noqa: E402
+from effi_api.config import cargar_env  # noqa: E402
+
+
+@pytest.fixture
+def limpio(monkeypatch, tmp_path):
+    for k in [k for k in os.environ if k.startswith("DIAN_")]:
+        monkeypatch.delenv(k)
+    monkeypatch.chdir(tmp_path)
+    return tmp_path
+
+
+def test_env_del_bloc_de_notas_utf16_bom_y_txt(limpio):
+    (limpio / ".env.txt").write_bytes("DIAN_CERT_PATH=C:/Certificados/empresa.p12\r\nDIAN_CERT_PASSWORD=clave\r\n".encode("utf-16"))
+    lectura = cargar_env(".env")
+    assert lectura.archivo.name == ".env.txt" and lectura.codificacion == "UTF-16"
+    assert os.environ["DIAN_CERT_PATH"] == "C:/Certificados/empresa.p12"
+    (limpio / ".env.txt").unlink()
+    os.environ.pop("DIAN_CERT_PATH")
+    (limpio / ".env").write_bytes("\ufeffDIAN_CERT_PATH = \"C:\\Certificados\\empresa.pfx\"\n".encode("utf-8"))
+    assert cargar_env(".env").codificacion == "UTF-8 con BOM"
+    assert os.environ["DIAN_CERT_PATH"] == "C:\\Certificados\\empresa.pfx"
+
+
+def test_una_linea_vacia_no_tapa_la_que_tiene_la_ruta(limpio):
+    # El .env.example trae «DIAN_CERT_PATH=» vacío: si además se agrega la línea con la ruta, debe valer la ruta.
+    (limpio / ".env").write_text("DIAN_CERT_PATH=\nDIAN_CERT_PATH=C:/Certificados/empresa.p12\n", encoding="utf-8")
+    cargar_env(".env")
+    assert os.environ["DIAN_CERT_PATH"] == "C:/Certificados/empresa.p12"
+
+
+def test_sin_ruta_explica_que_vio_sin_mostrar_valores(limpio):
+    (limpio / ".env").write_text("DIAN_AMBIENTE=produccion\nDIAN_CERT_PASSWORD=supersecreta\nDIAN_CERT_PATH=\n", encoding="utf-8")
+    with pytest.raises(ValueError) as e:
+        DianConfig.desde_entorno(preguntar=False)
+    msj = str(e.value)
+    assert "DIAN_AMBIENTE, DIAN_CERT_PASSWORD, DIAN_CERT_PATH" in msj and "supersecreta" not in msj and "vacía" in msj
+    (limpio / ".env").unlink()
+    with pytest.raises(ValueError, match="No se encontró el archivo .env"):
+        DianConfig.desde_entorno(preguntar=False)
+
+
+def test_pregunta_ruta_y_contrasena_si_hay_consola(limpio, monkeypatch, tmp_path):
+    p12 = _p12(tmp_path)
+    monkeypatch.setattr("builtins.input", lambda _: f'"{p12}"')
+    monkeypatch.setattr("getpass.getpass", lambda _: "secreta")
+    cfg = DianConfig.desde_entorno(preguntar=True)
+    assert cfg.cert_path == str(p12) and cfg.cert_password == "secreta"
+
+
+def test_cli_diagnostico_y_cert_por_opcion(limpio, monkeypatch, capsys, tmp_path):
+    (limpio / ".env").write_text("DIAN_CERT_PATH=C:/no/existe.p12\nDIAN_CERT_PASSWORD=x\n", encoding="utf-8")
+    assert cli_dian(["diagnostico"]) == 0
+    salida = capsys.readouterr().out
+    assert "DIAN_CERT_PATH" in salida and "NO: revisa la ruta" in salida and "C:/no/existe.p12" not in salida.split("\n")[1]
+    monkeypatch.setattr("getpass.getpass", lambda _: "secreta")
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    p12 = _p12(tmp_path, dias=4000)
+    assert cli_dian(["--cert", str(p12), "verificar-cert"]) == 0
+    assert "EMPRESA SAS" in capsys.readouterr().out
